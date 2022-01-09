@@ -1,0 +1,222 @@
+
+# introduction ------------------------------------------------------------
+# This is a social science research work produced as final project 
+# of a course taught by Ryan T. Moore in Winter Institute in Data Science
+
+# The purpose of this project is to understand the emotions associate with certain words in the area of Ultimate Frisbee
+
+# 2022-01-06
+
+# load packages -----------------------------------------------------------
+library(tm)  # for text mining
+library(SnowballC) # for text stemming
+library(wordcloud) # word-cloud generator
+library(RColorBrewer) # color palettes
+library(syuzhet) # for sentiment analysis
+library(ggplot2) # for plotting graphs
+library(here) # find the file
+library(readxl) # read excel file
+library(tidyverse) # dataframe manipulation
+library(syuzhet)
+
+# load data ---------------------------------------------------------------
+# tweets collected using https://netlytic.org/
+raw_text <- read_excel(here("raw-ultimate-frisbee-tweet.xlsx"))
+
+
+# explore data -------------------------------------------------------------
+colnames(raw_text)
+
+range(raw_text$pubdate) # include tweets for the past 7 days
+
+table(raw_text$tweet_type)
+# there are only 98 original post, the data quality is quite low
+
+# tidy data ---------------------------------------------------------------
+text <- raw_text %>%
+  select(description) %>%
+  distinct()
+nrow(text)
+
+# Sentiment analysis using Emotion classification built on the NRC --------
+for (row_number in 1:nrow(text)) {
+  emotion_count <- get_nrc_sentiment(as.character(text[row_number,1]))
+  #get_nrc_sentiment function will classify the emotion of the sentence
+  text[row_number,c(2:11)] <- emotion_count
+}
+
+# See the distribution of emotions
+#transpose
+td<-data.frame(t(text[,2:11]))
+#The function rowSums computes column sums across rows for each level of a grouping variable.
+td_new <- data.frame(rowSums(td[2:nrow(text)]))
+#Transformation and cleaning
+names(td_new)[1] <- "count"
+td_new <- cbind("sentiment" = rownames(td_new), td_new)
+rownames(td_new) <- NULL
+td_new2<-td_new[1:8,]
+#Plot One - count of words associated with each sentiment
+quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Ultimate Frisbee Tweets Sentiments Using The NRC Lexicon")
+
+# see the probability of emotion
+barplot(
+  sort(colSums(prop.table(text[, 2:9]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in Text using the NRC lexicon", xlab="Percentage"
+)
+
+
+# determine the emotion of the sentence by selecting the emotion with maximum ocurrence
+emotions <- colnames(text)
+emotions <- emotions[2:9]
+emotions
+for (row_number in 1:nrow(text)) {
+  text$nrc_emo <- emotions[which.max(text[row_number,2:9])]
+  
+}
+
+text2 <- text %>%
+  select(1,12)
+  
+#write_excel_csv(text2,"ultimate-frisbee-tweets-with-NRC-emotions.csv")
+# output tweets for manual emotion classification
+
+# The Naive Bayes algorithm -----------------------------------------------
+# There are special characters such as emoji so normal read.csv() would not work well
+text3 <- readr::read_csv(here("ultimate-frisbee-tweets-with-NRC-and-manual-emotion.csv"))
+
+# Access the accuracy of the NRC lexicon classification
+true_classification <- text3 %>%
+  filter(nrc_emo == manual_emo)
+
+# remove all urls
+text3$description <- gsub('http\\S+\\s*', "", text3$description)
+# remove all words start with @ since they are usually meaning less within our research scope
+text3$description <- gsub("@\\w+ *", "", text3$description)
+# remove all chactacters that are non-ASCII, such as emojis
+gsub("[^\x01-\x7F]", "", text3$description)
+
+# create corpus
+TextDoc <- VCorpus(VectorSource(text3$description))
+
+#Replacing special character with space
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+TextDoc <- tm_map(TextDoc, toSpace, "/")
+TextDoc <- tm_map(TextDoc, toSpace, "$")
+TextDoc <- tm_map(TextDoc, toSpace, "\\|")
+TextDoc <- tm_map(TextDoc, toSpace, "\\'")
+
+lapply(TextDoc[1:10], as.character)
+# Convert the text to lower case
+TextDoc <- tm_map(TextDoc, content_transformer(tolower))
+# Remove numbers
+TextDoc <- tm_map(TextDoc, removeNumbers)
+# Remove english common stopwords
+TextDoc <- tm_map(TextDoc, removeWords, stopwords("english"))
+# Remove punctuations
+TextDoc <- tm_map(TextDoc, removePunctuation)
+# Eliminate extra white spaces
+TextDoc <- tm_map(TextDoc, stripWhitespace)
+# Stemming
+TextDoc <- tm_map(TextDoc, stemDocument)
+
+# Build a term-document matrix
+TextDoc_dtm <- TermDocumentMatrix(TextDoc)
+inspect(TextDoc_dtm)
+dtm_m <- as.matrix(TextDoc_dtm)
+dtm_m
+
+dtm_df <- as.data.frame(dtm_m)
+# Sort by descearing value of frequency
+
+dtm_df$frequency = rowSums(dtm_df)
+dtm_df <- dtm_df %>%
+  arrange(desc(frequency))
+
+
+
+# Sort by descearing value of frequency
+dtm_v <- sort(rowSums(dtm_m),decreasing=TRUE)
+dtm_d <- data.frame(word = names(dtm_v),freq=dtm_v)
+# Display the top 5 most frequent words
+head(dtm_d, 15)
+
+# calculate occurrence
+dtm_d$occurrence <- apply(dtm_df>0, 1, sum) / nrow(text3)
+
+# create places for possibility of eight basic emotions
+dtm_d$anger <- 0
+dtm_d$anticipation <- 0
+dtm_d$disgust <- 0
+dtm_d$joy <- 0
+dtm_d$sadness <- 0
+dtm_d$surprise <- 0
+dtm_d$trust <- 0
+dtm_d$fear <- 0
+
+
+# calculate the frequency of emotions associated with each word
+for (col_number in 1:nrow(text3)) {
+  for (row_number in 1:nrow(dtm_d)) {
+    if (dtm_df[row_number,col_number]>0) {
+      dtm_d[row_number,as.character(text3[col_number,3])] = dtm_d[row_number,as.character(text3[col_number,3])] + 1
+    }
+  }
+}
+
+# calculate probability of each emotion
+emo_prob <- table(text3$manual_emo) / nrow(text3)
+emo_prob <- as.data.frame(emo_prob)
+emo_prob$Var1 <- as.character(emo_prob$Var1)
+emo_prob[8,1] <- "fear"
+emo_prob[8,2] <- 0
+
+# calculate the naive bayse probability
+dtm_prob <- dtm_d
+for (col_number in 4:11) {
+  for (row_number in 1:nrow(dtm_prob)) {
+    dtm_prob[row_number,col_number] = dtm_prob[row_number,col_number] / sum(dtm_prob[,col_number]) * emo_prob[col_number-3,2] * dtm_prob[row_number,3]
+  }
+}
+dtm_prob$fear <- 0 # There are no sentences associated with fear, so the probability is set to zero
+
+# see which emotion is most likely to be associated with each word
+mostPossibleEmotion <- apply(dtm_prob[,c(4:11)],1,which.max)
+
+emotions <- colnames(dtm_prob)
+emotions <- emotions[4:11]
+dtm_prob$highest_possibility <-  emotions[mostPossibleEmotion]
+table(dtm_prob$highest_possibility)
+
+
+barplot(table(dtm_prob$highest_possibility), 
+        main = "Count of primary emotions associated with words",
+        xlab = "Emotions",
+        ylab = "Count")
+#write_excel_csv(dtm_prob, "ultimate-frisbee-words-with-emotion-probability.csv")
+
+
+# some extra output for report --------------------------------------------
+
+barplot(
+  sort(table(text3$manual_emo)/nrow(text3)), 
+  main = "Percentage of emotions classified mannually",
+  xlab = "Percentage",
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1)
+
+# create a word cloud
+set.seed(1234)
+wordcloud(words = dtm_d$word, freq = dtm_d$freq, min.freq = 5,
+          max.words=100, random.order=FALSE, rot.per=0.40, 
+          colors=brewer.pal(8, "Dark2"))
+
+# find word association
+findAssocs(TextDoc_dtm, terms = c("tco","team","frisbee"), corlimit = 0.25)
+
+
+
+
