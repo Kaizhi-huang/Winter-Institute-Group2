@@ -1,0 +1,351 @@
+---
+title: "Emotion Detection of Ultimate Frisbee Tweets"
+author:
+- Kaizhi Huang1^[American University]
+- Guoyuan Zhang2^[American University]
+- Minhao Xu3^[American University]
+- Zenrui Zhang4^[American University]
+
+date: '2022-01-09'
+output:
+  html_document:
+    df_print: paged
+abstract: This project has assessed the performance of emotion detection using the
+  NRC lexicon on ultimate frisbee-related tweets by comparing the emotion classification
+  correctness with mannual classification result. This project also creates a word-emotion
+  association lexicon for ultimate frisbee to evalute the value of creating lexicon
+  for specific context. The NRC lexicon has poor performances in emotion detection
+  of specific contents and does not provide a probability of a word associating with
+  other words. Therefore, developing a lexicon for specific purposes would be valuable.
+  The lexicon developed in this project can be the base for further development.
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Prepare the data
+
+# introduction 
+# This is a social science research work produced as final project 
+# of a course taught by Ryan T. Moore in Winter Institute in Data Science
+
+# The purpose of this project is to understand the emotions associate with certain words in the area of Ultimate Frisbee
+
+# 2022-01-06
+
+# load packages -----------------------------------------------------------
+library(tm)  # for text mining
+library(SnowballC) # for text stemming
+library(wordcloud) # word-cloud generator
+library(RColorBrewer) # color palettes
+library(syuzhet) # for sentiment analysis
+library(ggplot2) # for plotting graphs
+library(readxl) # read excel file
+library(tidyverse) # dataframe manipulation
+library(here)
+library(syuzhet)
+
+# load data ---------------------------------------------------------------
+# tweets collected using https://netlytic.org/
+raw_text <- read_excel(here("raw-ultimate-frisbee-tweet.xlsx"))
+
+
+# explore data -------------------------------------------------------------
+colnames(raw_text)
+
+range(raw_text$pubdate) # include tweets for the past 7 days
+
+table(raw_text$tweet_type)
+# there are only 98 original post, the data quality is quite low
+
+# tidy data ---------------------------------------------------------------
+text <- raw_text %>%
+  select(description) %>%
+  distinct()
+nrow(text)
+
+# Sentiment analysis using Emotion classification built on the NRC --------
+for (row_number in 1:nrow(text)) {
+  emotion_count <- get_nrc_sentiment(as.character(text[row_number,1]))
+  #get_nrc_sentiment function will classify the emotion of the sentence
+  text[row_number,c(2:11)] <- emotion_count
+}
+
+# See the distribution of emotions
+#transpose
+td<-data.frame(t(text[,2:11]))
+#The function rowSums computes column sums across rows for each level of a grouping variable.
+td_new <- data.frame(rowSums(td[2:nrow(text)]))
+#Transformation and cleaning
+names(td_new)[1] <- "count"
+td_new <- cbind("sentiment" = rownames(td_new), td_new)
+rownames(td_new) <- NULL
+td_new2<-td_new[1:8,]
+#Plot One - count of words associated with each sentiment
+quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Ultimate Frisbee Tweets Sentiments Using The NRC Lexicon")
+
+# see the probability of emotion
+barplot(
+  sort(colSums(prop.table(text[, 2:9]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in Text using the NRC lexicon", xlab="Percentage"
+)
+
+
+# determine the emotion of the sentence by selecting the emotion with maximum ocurrence
+emotions <- colnames(text)
+emotions <- emotions[2:9]
+emotions
+for (row_number in 1:nrow(text)) {
+  text$nrc_emo <- emotions[which.max(text[row_number,2:9])]
+  
+}
+
+text2 <- text %>%
+  select(1,12)
+  
+#write_excel_csv(text2,"ultimate-frisbee-tweets-with-NRC-emotions.csv")
+# output tweets for manual emotion classification
+
+# text cleaning -----------------------------------------------
+# There are special characters such as emoji so normal read.csv() would not work well
+text3 <- readr::read_csv(here("ultimate-frisbee-tweets-with-NRC-and-manual-emotion.csv"))
+
+```
+
+
+# Introduction
+
+Emotion detection is a blend of psychology, technology, and other social science areas such as sociology. It can be used to recognize users's  emotions and needs and provide suggestions for an action plan. For example, it can be used to see how the public reacts to a website, a social event, a campaign, etc. Therefore, emotion detection is a common and valuable tool in most social science studies.
+  
+
+The most common way of emotion detection is to decompose sentences into single words and then determine the emotion of the sentence by examining the emotion associated with each word. Such a process is done using association dictionaries such as The NRC Emotion Lexicon, a list of English words and their associations with eight basic emotions (anger, fear, anticipation, trust, surprise, sadness, joy, and disgust) and two sentiments (negative and positive) (Mohammad, 2020). The annotations of the association were manually done by crowdsourcing.
+
+
+Since the NRC Emotion Lexicon is the first and the most extensive word-emotion association lexicon, it is commonly used in data analysis tools such as R and Python (Mohammad, 2020). However, people’s emotions can significantly vary across the different topics. The NRC Emotion Lexicon is supposed to offer a large-scale, common-sense examination of word-emotion association. Therefore, it might not be suitable for specific topics.
+
+
+  This paper aims to examine a few social science research questions associated with emotion detection, as shown down below:
+
+
+  1. Does the NRC Emotion Lexicon has good accuracy for specific topics, using Ultimate Frisbee tweet as an example?
+
+
+  2. Is it valuable to develop a word-emotion association lexicon for specific topics?
+
+
+
+# Methodology
+
+Tweets with the crucial word "ultimate frisbee" between "2021-12-28 10:02:30" and "2022-01-05 23:10:19" are collected. Ultimate frisbee is a relatively new team sport organized in the United States. Since ultimate frisbee is still a sport with a limited amount of players, there are only 248 good tweets. The choice of "ultimate frisbee" as the topic is made based on the consideration of having a specific topic that has potential business value.
+
+
+The emotion of each tweet will be analyzed programmatically using The NRC Emotion Lexicon embodied in the R package "syuzhet" and manually by the author. The classification processes will assign one of the eight basic emotions developed by Plutchik and Conte (1997). The eight basic emotions, or the Plutchik Model, can cover all emotions with a detailed description, which is used as criteria for manual classification (Plutchik and Conte, 1997). The classification performance will be accessed using the manual classification result as the correct answer.
+
+
+
+Then, imitating the processes of crowdsourcing, a word-emotion lexicon is built for ultimate-frisbee-related tweets classification using The Naive Bayes Algorithm, where each word is associated with a probability of being associated with certain emotions. The value of this lexicon is assessed empirically using descriptive statistics due to the high cost associated with building a test dataset.
+
+
+
+# Data Analysis
+
+248 valid tweets are processed using the get_nrc_sentiment function in the syuzhet package, where the count word-associated emotion is provided. Then, each tweet is classified into one of the eight emotions by selecting the emotion with the highest number of the word associated.
+
+
+Then, these tweets are output into a CSV file and manually classified. During this process, 22 tweets are determined to be either irrelevant or lacking context and therefore removed from the dataset. Examples of irrelevance and lacking context are provided in Appendix.
+
+
+Finally, each words probability of associated with a certain emotion is calculated using the Bayes Theorem.
+
+
+Lastly, emotion with the highest possibility of associating with certain word is chosen to form the lexicon.
+
+# Results
+
+### Assess the performance of the NRC lexicon classification
+
+The percentages of emotions classified using the NRC lexicon classification and manual classification are shown in Figure 3 and Figure 4. It can be found that the classification results are hugely different. A chi-square test also suggests that the distribution of classification results is statistically different.
+
+```{r echo=FALSE, message=TRUE, warning=FALSE}
+# see the probability of emotion
+barplot(
+  sort(colSums(prop.table(text[, 2:9]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Figure 1: Emotions in Text using the NRC lexicon", xlab="Percentage"
+)
+
+```
+
+```{r echo=FALSE, message=TRUE, warning=FALSE}
+barplot(
+  sort(table(text3$manual_emo)/nrow(text3)), 
+  main = "Figure 2: Percentage of emotions classified mannually",
+  xlab = "Percentage",
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1)
+
+```
+
+
+
+There are 54 out of 226 tweets correctly classified using the NRC lexicon. The correctly classified emotions are all **anticipation**, suggesting that the NRC lexicon has poor functionality in determining other emotions.
+
+
+### Value of building a lexicon specifically for ultimate frisbee
+A lexicon is built for ultimate-frisbee-related content, as shown down below.
+```{r echo=FALSE, message=TRUE, warning=FALSE}
+
+# Access the accuracy of the NRC lexicon classification
+true_classification <- text3 %>%
+  filter(nrc_emo == manual_emo)
+
+# remove all urls
+text3$description <- gsub('http\\S+\\s*', "", text3$description)
+# remove all words start with @ since they are usually meaning less within our research scope
+text3$description <- gsub("@\\w+ *", "", text3$description)
+# remove all chactacters that are non-ASCII, such as emojis
+text3$description <-gsub("[^\x01-\x7F]", "", text3$description)
+
+# create corpus
+TextDoc <- VCorpus(VectorSource(text3$description))
+
+#Replacing special character with space
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+TextDoc <- tm_map(TextDoc, toSpace, "/")
+TextDoc <- tm_map(TextDoc, toSpace, "$")
+TextDoc <- tm_map(TextDoc, toSpace, "\\|")
+TextDoc <- tm_map(TextDoc, toSpace, "\\'")
+
+#lapply(TextDoc[1:10], as.character)
+# Convert the text to lower case
+TextDoc <- tm_map(TextDoc, content_transformer(tolower))
+# Remove numbers
+TextDoc <- tm_map(TextDoc, removeNumbers)
+# Remove english common stopwords
+TextDoc <- tm_map(TextDoc, removeWords, stopwords("english"))
+# Remove punctuations
+TextDoc <- tm_map(TextDoc, removePunctuation)
+# Eliminate extra white spaces
+TextDoc <- tm_map(TextDoc, stripWhitespace)
+# Stemming
+TextDoc <- tm_map(TextDoc, stemDocument)
+
+# Build a term-document matrix
+TextDoc_dtm <- TermDocumentMatrix(TextDoc)
+#inspect(TextDoc_dtm)
+dtm_m <- as.matrix(TextDoc_dtm)
+#dtm_m
+
+dtm_df <- as.data.frame(dtm_m)
+# Sort by descearing value of frequency
+
+dtm_df$frequency = rowSums(dtm_df)
+dtm_df <- dtm_df %>%
+  arrange(desc(frequency))
+
+
+
+# Sort by descearing value of frequency
+dtm_v <- sort(rowSums(dtm_m),decreasing=TRUE)
+dtm_d <- data.frame(word = names(dtm_v),freq=dtm_v)
+# Display the top 5 most frequent words
+#head(dtm_d, 15)
+
+
+# Bayes -------------------------------------------------------------------
+
+# calculate occurrence
+dtm_d$occurrence <- apply(dtm_df>0, 1, sum) / nrow(text3)
+
+# create places for possibility of eight basic emotions
+dtm_d$anger <- 0
+dtm_d$anticipation <- 0
+dtm_d$disgust <- 0
+dtm_d$joy <- 0
+dtm_d$sadness <- 0
+dtm_d$surprise <- 0
+dtm_d$trust <- 0
+dtm_d$fear <- 0
+
+
+# calculate the frequency of emotions associated with each word
+for (col_number in 1:nrow(text3)) {
+  for (row_number in 1:nrow(dtm_d)) {
+    if (dtm_df[row_number,col_number]>0) {
+      dtm_d[row_number,as.character(text3[col_number,3])] = dtm_d[row_number,as.character(text3[col_number,3])] + 1
+    }
+  }
+}
+
+# calculate probability of each emotion
+emo_prob <- table(text3$manual_emo) / nrow(text3)
+emo_prob <- as.data.frame(emo_prob)
+emo_prob$Var1 <- as.character(emo_prob$Var1)
+emo_prob[8,1] <- "fear"
+emo_prob[8,2] <- 0
+
+# calculate the naive bayse probability
+dtm_prob <- dtm_d
+for (col_number in 4:11) {
+  for (row_number in 1:nrow(dtm_prob)) {
+    dtm_prob[row_number,col_number] = dtm_prob[row_number,col_number] / sum(dtm_prob[,col_number]) * emo_prob[col_number-3,2] * dtm_prob[row_number,3]
+  }
+}
+dtm_prob$fear <- 0 # There are no sentences associated with fear, so the probability is set to zero
+
+# see which emotion is most likely to be associated with each word
+mostPossibleEmotion <- apply(dtm_prob[,c(4:11)],1,which.max)
+
+emotions <- colnames(dtm_prob)
+emotions <- emotions[4:11]
+dtm_prob$highest_possibility <-  emotions[mostPossibleEmotion]
+#table(dtm_prob$highest_possibility)
+
+head(dtm_prob, 10)
+
+```
+
+
+
+An emotion is suggested for specific words, and probabilities of a word associating with each of the eight emotions are also provided. Ideally, the performance of this lexicon should be accessed by the classification of newly collected tweets. Since the sample size for building the lexicon is small, poor performance is expected. Therefore, the value of the lexicon is assessed empirically.
+
+
+The differences between different emotions are small for most of the words. Therefore, assigning a specific emotion is less effective than considering the probability of associating with each emotion. Thus, building a specific lexicon can be valuable.
+
+
+There are clear signs indicating that the trending emotion for specific topics is skewed. For example, there is a lot of joy and anticipation associated with ultimate frisbee, possibly because it is a newly emerged and quickly developing team sport. Thus, in the context of emotion detection is distinct or professional, a specifically created lexicon will be useful.
+
+
+
+
+
+# Conclusion
+
+
+This project has assessed the performance of emotion detection of the NRC lexicon on ultimate frisbee-related tweets and created a word-emotion association lexicon for ultimate frisbee. The NRC lexicon has poor performances in emotion detection of specific contents and does not provide a probability of a word associating with other words. Therefore, developing a lexicon for specific purposes would be valuable. The lexicon developed in this project can be the base for further development.
+
+# Limitation
+
+
+The main limitation of the project is the small sample size, which has increased the influences of short-term topics such as online games and trending activities.
+
+
+Furthermore, the project has selected the most frequently associated emotion as the classification result, while the association with other emotions is available. A more detailed analysis can be conducted considering all potential emotional associations to have a better assessment of the NRC lexicon.
+
+
+# References 
+Plutchik, R. E., & Conte, H. R. (1997). Circumplex models of personality and emotions (pp. xi-484). American Psychological Association.
+
+
+Mohammad, S. and Turney, P. (2013). Crowdsourcing a Word-Emotion Association Lexicon, Computational Intelligence, 29 (3), 436-465, 2013.
+
+
+Mohammad, S. (2020). NRC Word-Emotion Association Lexicon. Saif M. Mohammad. https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm 
